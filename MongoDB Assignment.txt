@@ -1,0 +1,210 @@
+﻿MONGO PROJECT KONSTANTINOS CHRONIS 
+QUERIES
+****************************************************************************************************
+1.- Using the load() function inside the mongo shell,load the prep.js
+****************************************************************************************************
+use students
+load("/data/db/prep.js")
+****************************************************************************************************
+
+2.- How many students in your database are currently taking at least 1 class?
+****************************************************************************************************
+db.students.find({"courses.course_status": "In Progress"}).count()
+****************************************************************************************************
+
+3.- Produce a grouping of the documents that contains the name of each home city and the number of students enrolled from that home city
+****************************************************************************************************************************************
+db.students.aggregate([
+    {"$group" : {_id :"$home_city", students:{$sum:1}}}
+])
+****************************************************************************************************
+
+4.- Which hobby or hobbies are the most popular?
+****************************************************************************************************
+db.students.aggregate([
+{$unwind: "$hobbies"}, 
+{$group:{"_id":"$hobbies","count":{$sum:1}}},
+{$sort:{"count":-1}},
+{"$project": {"hobby":"$_id","_id":0}} 
+])
+****************************************************************************************************
+
+5.- What is the GPA (ignoring dropped classes and in progress classes) of the best student?
+****************************************************************************************************
+db.students.aggregate([
+{$unwind: "$courses"}, 
+{$group : {_id :"$_id",Student :{$first: "$first_name"}, GPA : {$avg : "$courses.grade"}}},
+{"$sort":{"GPA":-1}},
+{"$project": {"GPA":"$GPA","_id":0}} 
+]).pretty()
+****************************************************************************************************
+
+6.- Which student has the largest number of grade 10’s?
+****************************************************************************************************
+db.students.aggregate([
+{$match: {"courses.grade":10}},
+{$unwind: "$courses"}, 
+{$group : {_id :"$_id",Student :{$first: "$first_name"}, number_of_courses : {$sum : 1}}},
+{"$sort":{"number_of_courses":-1}},
+{"$project": {"id":"$_id","Student":1,"_id":0}} 
+]).pretty()
+****************************************************************************************************
+
+7.- Which class has the highest average GPA? 
+****************************************************************************************************
+db.students.aggregate([
+{$unwind: "$courses"}, 
+{$group : {_id : "$courses.course_title", GPA : {$avg : "$courses.grade"}}},
+{"$sort":{"GPA":-1}},
+{"$project": {"class":"$_id","_id":0}} 
+]).pretty()
+****************************************************************************************************
+
+8.- Which class has been dropped the most number of times?
+****************************************************************************************************
+db.students.aggregate([
+{$match: {"courses.course_status":"Dropped"}},
+{$unwind: "$courses"}, 
+{$group : {_id :"$courses.course_title", NumberOfDropouts : {$sum : 1}}},
+{"$sort":{"NumberOfDropouts":-1}},
+{"$project": {"class":"$_id","_id":0}} 
+]).pretty()
+****************************************************************************************************
+
+9.- Produce of a count of classes that have been COMPLETED by class type
+****************************************************************************************************
+db.students.aggregate([
+{$match: {"courses.course_status":"Complete"}}, 
+{$unwind: "$courses"}, 
+{$group : {_id : {"course_type" :{$substr : ["$courses.course_code",0, 1]}}, NumberOfCompletions : {$sum : 1}}}
+])
+****************************************************************************************************
+
+10.- Produce a transformation of the documents so that the documents now have an additional boolean field called “hobbyist” that is true when the student has more than 3 hobbies and false otherwise.
+*************************************************************************************************************************************************************************
+db.students.aggregate([
+{$project: {_id:0, home_city:1, first_name: 1,hobbies:1,favourite_os:1,laptop_cost:1,courses: 1, 
+hobbyist:{ $gt: [ {$size:"$hobbies"}, 3 ]}}}
+]).pretty()
+
+****************************************************************************************************
+
+11.- Produce a transformation of the documents so that the documents now have an additional field that contains the number of classes that the student has completed
+********************************************************************************************************************************************************************
+db.students.aggregate([
+{$unwind: "$courses"}, 
+{$group : {_id : "$_id",home_city : { $first: '$home_city' },first_name : {$first : '$first_name'},
+hobbies : { $first: '$hobbies' },favourite_os : { $first: '$favourite_os' },laptop_cost : { $first: '$laptop_cost' },
+courses : { $push : '$courses'},
+Num_of_classes_Completed : {$sum : {$cond:[{$eq : [ "$courses.course_status","Complete"]},1,0]}}}},
+]).pretty()
+****************************************************************************************************
+
+12.- Produce a transformation of the documents in the collection with number of classes in progress and dropped
+***************************************************************************************************************
+db.students.aggregate([
+{$unwind: "$courses"}, 
+{$group : {_id : "$_id",first_name : {$first : '$first_name'}, GPA : {$avg : "$courses.grade"},
+classesInProgress : {$sum : {$cond:[{$eq :[ "$courses.course_status","In Progress"]},1,0]}},
+droppedClasses : {$sum : {$cond:[{$eq :[ "$courses.course_status","Dropped"]},1,0]}}}},
+]).pretty()
+****************************************************************************************************
+
+13.- Produce a NEW collection so that the new documents in this correspond to the classes on offer
+**************************************************************************************************
+db.students.aggregate([
+{$unwind: "$courses"}, 
+{$group : {_id :"$courses.course_code","course title" :{ $first:'$courses.course_title'}, 
+numberOfDropouts : {$sum : {$cond:[{$eq :[ "$courses.course_status","Dropped"]},1,0]}},
+numberOfCompletions : {$sum : {$cond:[{$eq :[ "$courses.course_status","Complete"]},1,0]}},
+currentlyRegistered: {$push: { $cond:[{$eq :[ "$courses.course_status","In Progress"]},"$_id","$exists"]}},
+maxGrade : {$max : "$courses.grade"},
+minGrade : {$min : "$courses.grade"},
+avgGrade : {$avg : "$courses.grade"}}},
+{$out : "classes" }
+]).pretty()
+****************************************************************************************************
+
+Map-Reduce in MongoDB
+****************************************************************************************************
+1.- Write a map reduce job on the students collection similar to the classic word count example. 
+************************************************************************************************
+var map = function() {
+	//we create the aaray with the stop words
+	var stopWords = new Array("of","with","in","and","for","to")
+	//function to check if a word exists in the stop words array
+	var isInArray = function (value, array) {
+		return array.indexOf(value) > -1;
+		}
+    for (i = 0; i < this.courses.length; i++) {
+        var summary = this.courses[i].course_title.split(" ");
+		for (j = 0; j < summary.length; j++) {
+			//if the word doesn't exist emit it
+			if(!isInArray(summary[j],stopWords)){
+				emit(summary[j].toLowerCase(), 1);
+            }
+		}
+	}
+};
+				   
+var reduce = function(key, countObjVals) {
+	var count = 0;
+	countObjVals.forEach(function(v) {
+		count +=v;
+	});
+	return count;
+};	  
+				  
+db.students.mapReduce( map,reduce,
+					 {out: "map_example" }
+					) 		
+**********************************************************************************************************************************************************
+
+2.-Now write a map reduce job on the students collection whose goal is to compute average GPA scores for completed courses by home city and by course type
+**********************************************************************************************************************************************************
+var map2 = function() {
+    for (var i = 0; i < this.courses.length; i++) {
+        var key = this.home_city;
+		var key2 = this.courses[i].course_code.slice(0,1);
+		//if the course has a grade 
+		if(this.courses[i].grade){
+        var value = this.courses[i].grade;
+		//we want to group our data by home_city and course_type
+		emit({home_city: key, course_type: key2}, value);
+		}
+    }
+};
+var reduce2 = function(key, countObjVals) {
+    var count =0;var grade = 0 ;
+    for (var i = 0; i < countObjVals.length; i++) {
+        grade += countObjVals[i];
+		count ++;
+    }
+	var GPA = Math.round(grade/count * 100) / 100 ; //round the GPAs to two decimals
+	return GPA;
+};
+
+db.students.mapReduce( map2,reduce2,
+                     {out: "map_reduce_gpa"}
+					 )
+****************************************************************************************************
+db.students.aggregate([
+{$match: {"courses.grade":10}},
+{$unwind: "$courses"}, 
+{$group : {_id :{"ID":"$_id",Student :"$first_name","home_city":"$home_city"}, number_of_courses : {$sum : 1},
+uniqueIds: { $addToSet: "$_id" }}}, 
+{"$sort":{"number_of_courses":-1}}
+]).pretty()
+
+
+db.students.aggregate([
+  { $group: { 
+    _id: {first_name:"$first_name",hobbies : "$hobbies",home_city:"$home_city",favourite_os:"$favourite_os"}, 
+    uniqueIds: { $addToSet: "$_id" },
+    count: { $sum: 1 } 
+  }}, 
+  { $match: { 
+    count: { $gt: 1 } 
+  }},
+{$sort:{"count":-1}},
+]).pretty()
