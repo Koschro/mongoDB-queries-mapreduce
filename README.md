@@ -7,3 +7,6 @@ Leveraging knowledge of R to set up communication betweeen R and MongoDB.
 
 Last but not least, writing simple map-reduce queries in MongoDB.
 
+# Creation of the database:
+
+In order to do that we loaded the Javascript file inside the mongo shell with the load() function.
